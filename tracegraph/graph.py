@@ -3,19 +3,22 @@ Graph export functionality for Tracegraph.
 """
 
 import os
-from typing import Dict, Any, Optional
-from dataclasses import dataclass
+from typing import Dict, Any, Optional, List, Union
+from dataclasses import dataclass, field
 from datetime import datetime
 
 @dataclass
 class TraceNode:
-    """Represents a node in the function call trace."""
-    function_name: str
+    """Node in the trace graph representing a function call."""
+    name: str
     args: Dict[str, Any]
-    return_value: Any
-    execution_time: float
-    children: list['TraceNode']
-    depth: int
+    returns: Any
+    start_time: float
+    end_time: float
+    children: List['TraceNode'] = field(default_factory=list)
+    error: Optional[Exception] = None
+    is_generator: bool = False
+    yielded_values: List[Any] = field(default_factory=list)
 
 class TraceGraph:
     """Handles conversion of trace data to Graphviz format."""
@@ -29,12 +32,15 @@ class TraceGraph:
                 return_value: Any, execution_time: float, depth: int) -> None:
         """Add a new node to the trace graph."""
         node = TraceNode(
-            function_name=function_name,
+            name=function_name,
             args=args,
-            return_value=return_value,
-            execution_time=execution_time,
+            returns=return_value,
+            start_time=execution_time,
+            end_time=execution_time,
             children=[],
-            depth=depth
+            error=None,
+            is_generator=False,
+            yielded_values=[]
         )
         
         if not self.node_stack:  # Root node
@@ -74,13 +80,13 @@ class TraceGraph:
         def add_node(node: TraceNode, parent_id: Optional[str] = None) -> None:
             # Create node label
             args_str = ", ".join(f"{k}={v!r}" for k, v in node.args.items())
-            time_str = f"took {self._format_time(node.execution_time)}"
+            time_str = f"took {self._format_time(node.end_time - node.start_time)}"
             
             # Determine node color based on execution time
-            if node.execution_time <= 1:
+            if node.end_time - node.start_time <= 1:
                 color = "#e6ffe6"  # Light green
                 edge_color = "#006600"  # Dark green
-            elif node.execution_time <= 5:
+            elif node.end_time - node.start_time <= 5:
                 color = "#fff2e6"  # Light orange
                 edge_color = "#cc6600"  # Dark orange
             else:
@@ -92,7 +98,7 @@ class TraceGraph:
             
             # Add node
             dot.append(f'    {node_id} [')
-            dot.append(f'        label="{node.function_name}({args_str})\\n{time_str}\\nreturns: {node.return_value!r}";')
+            dot.append(f'        label="{node.name}({args_str})\\n{time_str}\\nreturns: {node.returns!r}";')
             dot.append(f'        fillcolor="{color}";')
             dot.append(f'        color="{edge_color}";')
             dot.append("    ];")
